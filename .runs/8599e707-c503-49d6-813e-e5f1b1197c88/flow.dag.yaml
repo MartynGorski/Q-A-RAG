@@ -1,0 +1,73 @@
+id: bring_your_own_data_qna
+name: Bring Your Own Data QnA
+inputs:
+  question:
+    type: string
+    default: How to use SDK V2?
+    is_chat_input: false
+outputs:
+  output:
+    type: string
+    reference: ${answer_the_question_with_context.output}
+nodes:
+- name: embed_the_question
+  type: python
+  source:
+    type: package
+    tool: promptflow.tools.embedding.embedding
+  inputs:
+    connection: qnaopenai
+    deployment_name: textembed
+    input: ${inputs.question}
+  use_variants: false
+- name: search_question_from_indexed_docs
+  type: python
+  source:
+    type: package
+    tool: promptflow_vectordb.tool.vector_index_lookup.VectorIndexLookup.search
+  inputs:
+    path: azureml://subscriptions/d2720904-c35f-45cc-8d7f-44d90315b572/resourcegroups/MG-MLOPS/workspaces/MLOPS/datastores/workspaceblobstore/paths/UI/1708304152548/data/
+    query: ${embed_the_question.output}
+    top_k: 2
+  use_variants: false
+- name: generate_prompt_context
+  type: python
+  source:
+    type: code
+    path: generate_prompt_context.py
+  inputs:
+    search_result: ${search_question_from_indexed_docs.output}
+  use_variants: false
+- name: Prompt_variants
+  type: prompt
+  source:
+    type: code
+    path: Prompt_variants.jinja2
+  inputs:
+    contexts: ${generate_prompt_context.output}
+    question: ${inputs.question}
+  use_variants: false
+- name: answer_the_question_with_context
+  type: llm
+  source:
+    type: code
+    path: answer_the_question_with_context.jinja2
+  inputs:
+    deployment_name: gpt4
+    temperature: 0
+    top_p: 1
+    max_tokens: 1000
+    presence_penalty: 0
+    frequency_penalty: 0
+    suffix: ""
+    echo: false
+    best_of: 1
+    prompt_text: ${Prompt_variants.output}
+  provider: AzureOpenAI
+  connection: qnaopenai
+  api: chat
+  module: promptflow.tools.aoai
+  use_variants: false
+node_variants: {}
+environment:
+  python_requirements_txt: requirements.txt
